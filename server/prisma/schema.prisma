@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  hostedMeetings Meeting[]      @relation("MeetingHost")
+  participants   MeetingParticipant[]
+  sessions       Session[]
+  
+  @@map("users")
+}
+
+model Meeting {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  hostId      String
+  status      MeetingStatus @default(SCHEDULED)
+  maxCapacity Int      @default(50)
+  startedAt   DateTime?
+  endedAt     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  host        User                 @relation("MeetingHost", fields: [hostId], references: [id], onDelete: Cascade)
+  participants MeetingParticipant[]
+  sessions     Session[]
+  
+  @@map("meetings")
+}
+
+model MeetingParticipant {
+  id        String   @id @default(cuid())
+  meetingId String
+  userId    String
+  joinedAt  DateTime @default(now())
+  leftAt    DateTime?
+  
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([meetingId, userId])
+  @@map("meeting_participants")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  meetingId String?
+  isActive  Boolean  @default(true)
+  expiresAt DateTime @default(dbgenerated("(datetime('now', '+1 hour'))"))
+  createdAt DateTime @default(now())
+  
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  meeting Meeting? @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  
+  @@map("sessions")
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  ACTIVE
+  ENDED
+  CANCELLED
+}
