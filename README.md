@@ -10,11 +10,17 @@ This project uses a monorepo structure managed by pnpm workspaces:
 .
 ├── server/           # Express backend (Node.js + TypeScript)
 │   ├── src/
-│   │   ├── index.ts              # Application entry point
-│   │   ├── routes/               # API route handlers
-│   │   │   └── health.ts         # Health check endpoint
-│   │   └── middleware/           # Express middleware
-│   │       └── errorHandler.ts   # Centralized error handling
+│   │   ├── app.ts               # Express application setup
+│   │   ├── index.ts             # Server entry point
+│   │   ├── config/              # Environment configuration
+│   │   ├── controllers/         # Route controllers (auth, users)
+│   │   ├── lib/                 # Prisma client, JWT helpers
+│   │   ├── middleware/          # Express middleware (auth, error handling)
+│   │   ├── routes/              # API route handlers
+│   │   ├── schemas/             # Zod validation schemas
+│   │   ├── utils/               # Shared utilities
+│   │   └── tests/               # Vitest + Supertest suites
+│   ├── prisma/                  # Prisma schema, migrations, seed script
 │   ├── package.json
 │   └── tsconfig.json
 │
@@ -75,11 +81,28 @@ cp server/.env.example server/.env
 cp client/.env.example client/.env
 ```
 
-4. Start the PostgreSQL database (optional):
+4. Start the PostgreSQL database:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
+
+5. Run database migrations:
+
+```bash
+cd server
+pnpm prisma:migrate
+```
+
+6. Seed the database with demo data:
+
+```bash
+pnpm seed
+```
+
+This will create a demo user with the following credentials:
+- Email: `demo@example.com`
+- Password: `Demo1234`
 
 ### Development
 
@@ -148,16 +171,20 @@ pnpm typecheck
 
 ### Server (`/server/.env`)
 
-| Variable            | Description                  | Default                                                 |
-| ------------------- | ---------------------------- | ------------------------------------------------------- |
-| `PORT`              | Server port                  | `3000`                                                  |
-| `NODE_ENV`          | Environment mode             | `development`                                           |
-| `DATABASE_URL`      | PostgreSQL connection string | `postgresql://devuser:devpassword@localhost:5432/devdb` |
-| `POSTGRES_USER`     | Database user                | `devuser`                                               |
-| `POSTGRES_PASSWORD` | Database password            | `devpassword`                                           |
-| `POSTGRES_DB`       | Database name                | `devdb`                                                 |
-| `POSTGRES_PORT`     | Database port                | `5432`                                                  |
-| `CLIENT_URL`        | Frontend URL for CORS        | `http://localhost:5173`                                 |
+| Variable                | Description                       | Default                                                          |
+| ----------------------- | --------------------------------- | ---------------------------------------------------------------- |
+| `PORT`                  | Server port                       | `3000`                                                           |
+| `NODE_ENV`              | Environment mode                  | `development`                                                    |
+| `DATABASE_URL`          | PostgreSQL connection string      | `postgresql://devuser:devpassword@localhost:5432/devdb?schema=public` |
+| `POSTGRES_USER`         | Database user                     | `devuser`                                                        |
+| `POSTGRES_PASSWORD`     | Database password                 | `devpassword`                                                    |
+| `POSTGRES_DB`           | Database name                     | `devdb`                                                          |
+| `POSTGRES_PORT`         | Database port                     | `5432`                                                           |
+| `CLIENT_URL`            | Frontend URL for CORS             | `http://localhost:5173`                                          |
+| `JWT_SECRET`            | Access token signing secret       | `your-secret-key-change-in-production`                           |
+| `JWT_REFRESH_SECRET`    | Refresh token signing secret      | `your-refresh-secret-key-change-in-production`                   |
+| `JWT_EXPIRES_IN`        | Access token expiration duration  | `15m`                                                            |
+| `JWT_REFRESH_EXPIRES_IN`| Refresh token expiration duration | `7d`                                                             |
 
 ### Client (`/client/.env`)
 
@@ -172,8 +199,13 @@ pnpm typecheck
 - **Runtime**: Node.js
 - **Framework**: Express
 - **Language**: TypeScript
+- **ORM**: Prisma
+- **Database**: PostgreSQL
+- **Authentication**: JWT + bcrypt
+- **Validation**: Zod
 - **Environment**: dotenv
 - **CORS**: cors middleware
+- **Testing**: Vitest + Supertest
 
 ### Frontend
 
@@ -214,6 +246,13 @@ pnpm typecheck
 - `pnpm build` - Compile TypeScript to JavaScript
 - `pnpm start` - Start production server
 - `pnpm typecheck` - Run TypeScript type checking
+- `pnpm prisma:generate` - Generate Prisma Client
+- `pnpm prisma:migrate` - Apply pending migrations locally
+- `pnpm prisma:migrate:deploy` - Apply migrations in CI/production
+- `pnpm prisma:studio` - Open Prisma Studio data browser
+- `pnpm seed` - Seed the database with demo data
+- `pnpm test` - Run backend unit/integration tests
+- `pnpm test:watch` - Watch mode for backend tests
 
 ### Client Scripts
 
@@ -221,6 +260,61 @@ pnpm typecheck
 - `pnpm build` - Build for production
 - `pnpm preview` - Preview production build locally
 - `pnpm typecheck` - Run TypeScript type checking
+
+## 🗄️ Database
+
+### Schema
+
+The database uses Prisma as ORM. The current schema includes:
+
+**User Model:**
+- `id`: UUID (Primary Key)
+- `email`: String (Unique)
+- `hashedPassword`: String
+- `displayName`: String
+- `createdAt`: DateTime
+- `updatedAt`: DateTime
+
+### Migrations
+
+The database schema is managed by Prisma migrations located in `/server/prisma/migrations`.
+
+To create a new migration after schema changes:
+
+```bash
+cd server
+pnpm prisma:migrate
+```
+
+To apply migrations in production:
+
+```bash
+pnpm prisma:migrate:deploy
+```
+
+### Database Browser
+
+Open Prisma Studio to browse and edit data:
+
+```bash
+cd server
+pnpm prisma:studio
+```
+
+## ✅ Testing
+
+Backend tests live in `/server/src/tests` and can be run with:
+
+```bash
+cd server
+pnpm test
+```
+
+Run tests in watch mode while developing:
+
+```bash
+pnpm test:watch
+```
 
 ## 🧪 API Endpoints
 
@@ -237,6 +331,141 @@ Example response:
   "timestamp": "2024-01-15T10:30:00.000Z",
   "uptime": 123.45,
   "environment": "development"
+}
+```
+
+### Authentication
+
+#### Register
+
+- **POST** `/api/auth/register`
+- Creates a new user account
+
+Request body:
+```json
+{
+  "email": "user@example.com",
+  "password": "SecurePass123",
+  "displayName": "John Doe"
+}
+```
+
+Response (201):
+```json
+{
+  "status": "success",
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "displayName": "John Doe",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    },
+    "accessToken": "jwt-token",
+    "refreshToken": "jwt-refresh-token",
+    "expiresIn": "15m",
+    "refreshExpiresIn": "7d"
+  }
+}
+```
+
+#### Login
+
+- **POST** `/api/auth/login`
+- Authenticates a user and returns tokens
+
+Request body:
+```json
+{
+  "email": "user@example.com",
+  "password": "SecurePass123"
+}
+```
+
+Response (200):
+```json
+{
+  "status": "success",
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "displayName": "John Doe",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    },
+    "accessToken": "jwt-token",
+    "refreshToken": "jwt-refresh-token",
+    "expiresIn": "15m",
+    "refreshExpiresIn": "7d"
+  }
+}
+```
+
+#### Refresh Token
+
+- **POST** `/api/auth/refresh`
+- Refreshes access token using refresh token
+
+Request body:
+```json
+{
+  "refreshToken": "jwt-refresh-token"
+}
+```
+
+Response (200):
+```json
+{
+  "status": "success",
+  "data": {
+    "accessToken": "new-jwt-token",
+    "refreshToken": "new-jwt-refresh-token",
+    "expiresIn": "15m",
+    "refreshExpiresIn": "7d"
+  }
+}
+```
+
+### Users
+
+#### Get Current User
+
+- **GET** `/api/users/me`
+- Returns the currently authenticated user's profile
+- Requires `Authorization: Bearer <access-token>` header
+
+Response (200):
+```json
+{
+  "status": "success",
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "displayName": "John Doe",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  }
+}
+```
+
+### Error Responses
+
+All endpoints return structured error responses:
+
+```json
+{
+  "status": "error",
+  "statusCode": 400,
+  "message": "Validation error",
+  "details": {
+    "fieldErrors": {
+      "email": ["Invalid email address"]
+    }
+  }
 }
 ```
 
